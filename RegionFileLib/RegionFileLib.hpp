@@ -2,6 +2,8 @@
 
 #include <nbt_cpp\NBT_All.hpp>
 
+#include <lz4.h>
+
 
 /*
 		总体：
