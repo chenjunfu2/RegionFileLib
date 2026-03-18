@@ -15,32 +15,44 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="xxh3.h">
+    <ClInclude Include="lz4.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="xxhash.h">
+    <ClInclude Include="lz4file.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="xxh_x86dispatch.h">
+    <ClInclude Include="lz4frame.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="lz4frame_static.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="lz4hc.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="xxh_x86dispatch.c">
+    <ClCompile Include="lz4file.c">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="xxhash.c">
+    <ClCompile Include="lz4frame.c">
       <Filter>源文件</Filter>
     </ClCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <Text Include="CMakeLists.txt">
-      <Filter>资源文件</Filter>
-    </Text>
+    <ClCompile Include="lz4hc.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="lz4.c">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="LICENSE">
       <Filter>资源文件</Filter>
     </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Text Include="CMakeLists.txt">
+      <Filter>资源文件</Filter>
+    </Text>
   </ItemGroup>
 </Project>

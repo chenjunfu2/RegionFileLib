@@ -9,6 +9,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "zlib", "Dependencies\zlib\z
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "xxhash", "Dependencies\xxhash\xxhash.vcxproj", "{DC504567-A6FA-4E8F-A354-E1ECFDDE5D81}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "lz4", "Dependencies\lz4\lz4.vcxproj", "{C4D352E5-C5CE-4FBA-90CF-D220E567D4C3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -41,6 +43,14 @@ Global
 		{DC504567-A6FA-4E8F-A354-E1ECFDDE5D81}.Release|x64.Build.0 = Release|x64
 		{DC504567-A6FA-4E8F-A354-E1ECFDDE5D81}.Release|x86.ActiveCfg = Release|Win32
 		{DC504567-A6FA-4E8F-A354-E1ECFDDE5D81}.Release|x86.Build.0 = Release|Win32
+		{C4D352E5-C5CE-4FBA-90CF-D220E567D4C3}.Debug|x64.ActiveCfg = Debug|x64
+		{C4D352E5-C5CE-4FBA-90CF-D220E567D4C3}.Debug|x64.Build.0 = Debug|x64
+		{C4D352E5-C5CE-4FBA-90CF-D220E567D4C3}.Debug|x86.ActiveCfg = Debug|Win32
+		{C4D352E5-C5CE-4FBA-90CF-D220E567D4C3}.Debug|x86.Build.0 = Debug|Win32
+		{C4D352E5-C5CE-4FBA-90CF-D220E567D4C3}.Release|x64.ActiveCfg = Release|x64
+		{C4D352E5-C5CE-4FBA-90CF-D220E567D4C3}.Release|x64.Build.0 = Release|x64
+		{C4D352E5-C5CE-4FBA-90CF-D220E567D4C3}.Release|x86.ActiveCfg = Release|Win32
+		{C4D352E5-C5CE-4FBA-90CF-D220E567D4C3}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

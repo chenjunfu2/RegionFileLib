@@ -3,14 +3,17 @@
   <ImportGroup Label="PropertySheets" />
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup>
-    <IncludePath>$(SolutionDir)Dependencies\zlib;$(SolutionDir)Dependencies\xxhash;$(SolutionDir)Dependencies;$(IncludePath)</IncludePath>
+    <IncludePath>$(SolutionDir)Dependencies\lz4;$(SolutionDir)Dependencies\zlib;$(SolutionDir)Dependencies\xxhash;$(SolutionDir)Dependencies;$(IncludePath)</IncludePath>
   </PropertyGroup>
 	<ItemGroup>
-		<ProjectReference Include="$(SolutionDir)Dependencies\xxhash\xxhash.vcxproj">
-			<Project>{dc504567-a6fa-4e8f-a354-e1ecfdde5d81}</Project>
-		</ProjectReference>
+		<ProjectReference Include="$(SolutionDir)Dependencies\lz4\lz4.vcxproj">
+      <Project>{c4d352e5-c5ce-4fba-90cf-d220e567d4c3}</Project>
+    </ProjectReference>
 		<ProjectReference Include="$(SolutionDir)Dependencies\zlib\zlib.vcxproj">
 			<Project>{e304062b-8190-4215-affe-d2bf30de6600}</Project>
+		</ProjectReference>
+		<ProjectReference Include="$(SolutionDir)Dependencies\xxhash\xxhash.vcxproj">
+			<Project>{dc504567-a6fa-4e8f-a354-e1ecfdde5d81}</Project>
 		</ProjectReference>
 	</ItemGroup>
 </Project>

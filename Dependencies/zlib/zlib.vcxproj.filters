@@ -101,4 +101,9 @@
       <Filter>资源文件</Filter>
     </Text>
   </ItemGroup>
+  <ItemGroup>
+    <None Include="LICENSE">
+      <Filter>资源文件</Filter>
+    </None>
+  </ItemGroup>
 </Project>
