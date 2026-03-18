@@ -8,6 +8,8 @@
 
 #include <stdlib.h>
 
+#include <lz4.h>
+
 int wmain0(int argc, wchar_t *argv[])
 {
 	if (argc != 2)
@@ -295,7 +297,7 @@ public:
 
 
 
-int wmain0(int argc, wchar_t *argv[])
+int wmain(int argc, wchar_t *argv[])
 {
 	if (argc != 2)
 	{
