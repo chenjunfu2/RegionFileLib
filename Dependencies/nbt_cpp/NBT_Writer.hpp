@@ -6,7 +6,6 @@
 #include <stdint.h>//类型定义
 #include <stddef.h>//size_t
 #include <stdlib.h>//byte swap
-#include <string.h>//memcpy
 #include <utility>//std::move
 #include <type_traits>//类型约束
 #include <algorithm>//std::sort
@@ -14,6 +13,7 @@
 #include "NBT_Print.hpp"//打印输出
 #include "NBT_Node.hpp"//nbt类型
 #include "NBT_Endian.hpp"//字节序
+#include "NBT_IO.hpp"//IO流对象
 
 /// @file
 /// @brief NBT类型二进制序列化工具
@@ -26,140 +26,20 @@ class NBT_Writer
 	/// @brief 禁止析构
 	~NBT_Writer(void) = delete;
 
-public:
-	/// @brief 默认输出流类，用于将数据写入到标准库容器中
-	/// @tparam T 数据容器类型，必须满足以下要求：
-	/// - value_type的大小必须为1字节
-	/// - value_type必须是可平凡复制的类型
-	/// @note 这个类用于标准库的顺序容器，非标准库容器顺序请使用其它的自定义流对象，而非使用此对象，
-	/// 因为此对象对标准库容器的部分实现存在假设，其它非标准库容器极有可能不兼容导致未定义行为。
-	/// 可以注意到部分接口在类中并未使用，这是未来扩展时可能用到的，如果自定义流对象，则可以省略部分未使用的接口。
-	template <typename T = std::vector<uint8_t>>
-	class DefaultOutputStream
-	{
-	private:
-		T &tData;
-
-	public:
-		/// @brief 容器类型
-		using StreamType = T;
-		/// @brief 容器值类型
-		using ValueType = typename T::value_type;
-
-		//静态断言确保字节流与可平凡拷贝
-		static_assert(sizeof(ValueType) == 1, "Error ValueType Size");
-		static_assert(std::is_trivially_copyable_v<ValueType>, "ValueType Must Be Trivially Copyable");
-
-		/// @brief 构造函数
-		/// @param _tData 输出数据容器的引用
-		/// @param szStartIdx 起始索引，容器会调整大小到此索引位置
-		/// @note 索引位置后的数据都会被删除，然后从索引当前位置开始写入
-		DefaultOutputStream(T &_tData, size_t szStartIdx = 0) :tData(_tData)//引用天生无法使用临时值构造，无需担心临时值构造导致的悬空引用
-		{
-			tData.resize(szStartIdx);
-		}
-
-		/// @brief 默认析构函数
-		~DefaultOutputStream(void) = default;
-		/// @brief 禁止拷贝构造
-		DefaultOutputStream(const DefaultOutputStream &) = delete;
-		/// @brief 禁止移动构造
-		DefaultOutputStream(DefaultOutputStream &&) = delete;
-		/// @brief 禁止拷贝赋值
-		DefaultOutputStream &operator=(const DefaultOutputStream &) = delete;
-		/// @brief 禁止移动赋值
-		DefaultOutputStream &operator=(DefaultOutputStream &&) = delete;
-
-		/// @brief 下标访问运算符
-		/// @param szIndex 索引位置
-		/// @return 对应位置的常量引用
-		/// @note 这个接口一般用于随机访问流中的数据，而不修改流，调用者保证访问范围合法
-		const ValueType &operator[](size_t szIndex) const noexcept
-		{
-			return tData[szIndex];
-		}
-
-		/// @brief 向流中写入写入单个值
-		/// @tparam V 元素类型，必须可构造为ValueType
-		/// @param c 要写入的元素
-		/// @note 这个接口一般用于逐个向流中写入数据
-		template<typename V>
-		requires(std::is_constructible_v<ValueType, V &&>)
-		void PutOnce(V &&c)
-		{
-			tData.push_back(std::forward<V>(c));
-		}
-
-		/// @brief 向流中写入一段数据
-		/// @param pData 指向要写入数据的缓冲区的指针
-		/// @param szSize 要写入的数据大小（字节数）
-		/// @note 这个接口一般用于批量向流中写入数据
-		void PutRange(const ValueType *pData, size_t szSize)
-		{
-			//tData.insert(tData.end(), &pData[0], &pData[szSize]);
-
-			//使用更高效的实现，而不是迭代器写入
-			size_t szCurSize = tData.size();
-			tData.resize(szCurSize + szSize);
-			memcpy(&tData.data()[szCurSize], &pData[0], szSize);
-		}
-
-		/// @brief 预分配额外容量
-		/// @param szAddSize 要额外分配的容量大小（字节数）
-		/// @note 这个接口一般是用于性能优化的，提前要求流预留空间以便后续的写入。
-		/// 请不要假设在所有写入操作之前都会进行此调用，这个接口只有部分情况会用到。
-		void AddReserve(size_t szAddSize)
-		{
-			tData.reserve(tData.size() + szAddSize);
-		}
-
-		/// @brief 删除（撤销）最后一个写入的字节
-		void UnPut(void) noexcept
-		{
-			tData.pop_back();
-		}
-
-		/// @brief 获取当前字节流中已有的数据大小
-		/// @return 数据大小，以字节数计
-		size_t Size(void) const noexcept
-		{
-			return tData.size();
-		}
-
-		/// @brief 重置流，清空所有数据
-		void Reset(void) noexcept
-		{
-			tData.clear();
-		}
-
-		/// @brief 获取底层数据的常量引用
-		/// @return 底层数据容器的常量引用
-		const T &Data(void) const noexcept
-		{
-			return tData;
-		}
-
-		/// @brief 获取底层数据的非常量引用
-		/// @return 底层数据容器的非常量引用
-		T &Data(void) noexcept
-		{
-			return tData;
-		}
-	};
-
-private:
+protected:
+/// @cond
 	enum ErrCode : uint8_t
 	{
 		AllOk = 0,//没有问题
 
-		UnknownError,//其他错误
-		StdException,//标准异常
-		OutOfMemoryError,//内存不足错误
+		UnknownError,//其他错误（代码问题）
+		StdException,//标准异常（代码问题）
+		OutOfMemoryError,//内存不足错误（代码问题）
 		StackDepthExceeded,//调用栈深度过深（代码问题）
-		StringTooLongError,//字符串过长错误
-		ArrayTooLongError,//数组过长错误
-		ListTooLongError,//列表过长错误
-		NbtTypeTagError,//NBT标签类型错误
+		StringTooLongError,//字符串过长错误（代码问题）
+		ArrayTooLongError,//数组过长错误（代码问题）
+		ListTooLongError,//列表过长错误（代码问题）
+		NbtTypeTagError,//NBT标签类型错误（代码问题）
 
 		ERRCODE_END,//结束标记
 	};
@@ -209,10 +89,10 @@ private:
 	requires(std::is_same_v<T, ErrCode> || std::is_same_v<T, WarnCode>)
 	static std::conditional_t<std::is_same_v<T, ErrCode>, ErrCode, void> Error
 		(
-			const T &code,
+			const T code,
 			const OutputStream &tData,
 			InfoFunc &funcInfo,
-			const std::FMT_STR<Args...> fmt,
+			const std::format_string<Args...> fmt,
 			Args&&... args
 		) noexcept
 	{
@@ -250,9 +130,7 @@ private:
 		funcInfo(lvl, "\"\n\n");
 
 		//如果可以，预览szCurrent前n个字符，否则裁切到边界
-/// @cond
 #define VIEW_PRE (8 * 8 + 8)//向前
-/// @endcond
 		size_t rangeBeg = (tData.Size() > VIEW_PRE) ? (tData.Size() - VIEW_PRE) : (0);//上边界裁切
 		size_t rangeEnd = tData.Size();//下边界裁切
 #undef VIEW_PRE
@@ -305,7 +183,6 @@ private:
 		}
 	}
 
-///@cond
 #define _RP___FUNCTION__ __FUNCTION__//用于编译过程二次替换达到函数内部
 
 #define _RP___LINE__ _RP_STRLING(__LINE__)
@@ -313,13 +190,13 @@ private:
 #define STRLING(l) #l
 
 #define STACK_TRACEBACK(fmt, ...) funcInfo(NBT_Print_Level::Err, "In [{}] Line:[" _RP___LINE__ "]: \n" fmt "\n\n", _RP___FUNCTION__ __VA_OPT__(,) __VA_ARGS__);
-#define CHECK_STACK_DEPTH(Depth) \
-if((Depth) <= 0)\
+#define CHECK_STACK_DEPTH(depth) \
+if((depth) == 0)\
 {\
 	eRet = Error(StackDepthExceeded, tData, funcInfo, "{}: NBT nesting depth exceeded maximum call stack limit", _RP___FUNCTION__);\
-	STACK_TRACEBACK("(Depth) <= 0");\
+	STACK_TRACEBACK(#depth " == 0");\
 	return eRet;\
-}\
+}
 
 #define MYTRY \
 try\
@@ -345,7 +222,6 @@ catch(...)\
 	STACK_TRACEBACK("catch(...)");\
 	return eRet;\
 }
-///@endcond
 
 	template<typename OutputStream, typename InfoFunc>
 	static inline ErrCode CheckReserve(OutputStream &tData, size_t szAddSize, InfoFunc &funcInfo) noexcept
@@ -387,23 +263,26 @@ catch(...)\
 		}
 
 		//输出名称长度
-		NBT_Type::StringLength wNameLength = (uint16_t)szStringLength;
-		eRet = WriteBigEndian(tData, wNameLength, funcInfo);
+		NBT_Type::StringLength wStringLength = (NBT_Type::StringLength)szStringLength;
+		eRet = WriteBigEndian(tData, wStringLength, funcInfo);
 		if (eRet != AllOk)
 		{
-			STACK_TRACEBACK("wNameLength Write");
+			STACK_TRACEBACK("wStringLength Write");
 			return eRet;
 		}
 
+		using ValueType = NBT_Type::String::value_type;
+		size_t szStringSize = szStringLength * sizeof(ValueType);
+
 		//输出名称
-		eRet = CheckReserve(tData, szStringLength * sizeof(sName[0]), funcInfo);//提前分配
+		eRet = CheckReserve(tData, szStringSize, funcInfo);//提前分配
 		if (eRet != AllOk)
 		{
-			STACK_TRACEBACK("CheckReserve Fail, Check Size: [{}]", szStringLength * sizeof(sName[0]));
+			STACK_TRACEBACK("CheckReserve Error, Check Size: [{}]", szStringSize);
 			return eRet;
 		}
 		//范围写入
-		tData.PutRange((const typename OutputStream::ValueType *)sName.data(), szStringLength);
+		tData.PutRange((const typename OutputStream::ValueType *)sName.data(), szStringSize);
 
 		return eRet;
 	MYCATCH;
@@ -453,15 +332,18 @@ catch(...)\
 			return eRet;
 		}
 
+		using ValueType = typename T::value_type;
+		size_t szArraySize = szArrayLength * sizeof(ValueType);
+
 		//写出元素
-		eRet = CheckReserve(tData, iArrayLength * sizeof(tArray[0]), funcInfo);//提前分配
+		eRet = CheckReserve(tData, szArraySize, funcInfo);//提前分配
 		if (eRet != AllOk)
 		{
-			STACK_TRACEBACK("CheckReserve Fail, Check Size: [{}]", iArrayLength * sizeof(tArray[0]));
+			STACK_TRACEBACK("CheckReserve Error, Check Size: [{}]", szArraySize);
 			return eRet;
 		}
 
-		for (NBT_Type::ArrayLength i = 0; i < iArrayLength; ++i)
+		for (size_t i = 0; i < szArrayLength; ++i)
 		{
 			eRet = WriteBigEndian(tData, tArray[i], funcInfo);
 			if (eRet != AllOk)
@@ -480,10 +362,10 @@ catch(...)\
 		ErrCode eRet = AllOk;
 
 		//获取类型
-		NBT_TAG curTag = nodeNbt.GetTag();
+		NBT_TAG enCompoundEntryTag = nodeNbt.GetTag();
 
 		//集合中如果存在nbt end类型的元素，删除而不输出
-		if (curTag == NBT_TAG::End)
+		if (enCompoundEntryTag == NBT_TAG::End)
 		{
 			//End元素被忽略警告（警告不返回错误码）
 			Error(EndElementIgnoreWarn, tData, funcInfo, "{}:\nName: \"{}\", type is [NBT_Type::End], ignored!", __FUNCTION__,
@@ -492,10 +374,10 @@ catch(...)\
 		}
 
 		//先写出tag
-		eRet = WriteBigEndian(tData, (NBT_TAG_RAW_TYPE)curTag, funcInfo);
+		eRet = WriteBigEndian(tData, (NBT_TAG_RAW_TYPE)enCompoundEntryTag, funcInfo);
 		if (eRet != AllOk)
 		{
-			STACK_TRACEBACK("curTag Write");
+			STACK_TRACEBACK("enCompoundEntryTag Write");
 			return eRet;
 		}
 
@@ -503,16 +385,16 @@ catch(...)\
 		eRet = PutName(tData, sName, funcInfo);
 		if (eRet != AllOk)
 		{
-			STACK_TRACEBACK("PutName Fail, Type: [NBT_Type::{}]", NBT_Type::GetTypeName(curTag));
+			STACK_TRACEBACK("PutName Error, Type: [NBT_Type::{}]", NBT_Type::GetTypeName(enCompoundEntryTag));
 			return eRet;
 		}
 
 		//最后根据tag类型写出数据
-		eRet = PutSwitch<bSortCompound>(tData, nodeNbt, curTag, szStackDepth - 1, funcInfo);
+		eRet = PutSwitch<bSortCompound>(tData, nodeNbt, enCompoundEntryTag, szStackDepth - 1, funcInfo);
 		if (eRet != AllOk)
 		{
-			STACK_TRACEBACK("PutSwitch Fail, Name: \"{}\", Type: [NBT_Type::{}]",
-				sName.ToCharTypeUTF8(), NBT_Type::GetTypeName(curTag));//此处ToCharTypeUTF8可能抛异常
+			STACK_TRACEBACK("PutSwitch Error, Name: \"{}\", Type: [NBT_Type::{}]",
+				sName.ToCharTypeUTF8(), NBT_Type::GetTypeName(enCompoundEntryTag));//此处ToCharTypeUTF8可能抛异常
 			return eRet;
 		}
 
@@ -649,19 +531,8 @@ catch(...)\
 		ErrCode eRet = AllOk;
 		CHECK_STACK_DEPTH(szStackDepth);
 
-		//检查
-		size_t szListLength = tList.size();
-		if (szListLength > (size_t)NBT_Type::ListLength_Max)//大于的情况下强制赋值会导致严重问题，只能返回错误
-		{
-			eRet = Error(ListTooLongError, tData, funcInfo, "{}:\nszListLength[{}] > ListLength_Max[{}]", __FUNCTION__,
-				szListLength, (size_t)NBT_Type::ListLength_Max);
-			STACK_TRACEBACK("szListLength Test");
-			return eRet;
-		}
-
 		//转换为写入大小
-		NBT_Type::ListLength iListLength = (NBT_Type::ListLength)szListLength;
-		NBT_Type::ListLength iListEmptyEntryLength = 0;//统计空元素数量
+		size_t szListEmptyEntryLength = 0;//统计空元素数量
 
 		//获取列表标签
 		bool bNeedWarp = false;
@@ -670,10 +541,10 @@ catch(...)\
 		//判断列表元素一致性，不一致则使用Compound封装
 		for (const auto &it : tList)
 		{
-			auto curTag = it.GetTag();
+			NBT_TAG curTag = it.GetTag();
 			if (curTag == NBT_TAG::End)
 			{
-				++iListEmptyEntryLength;//统计空元素数量
+				++szListEmptyEntryLength;//统计空元素数量
 				continue;//空元素没有后续判断必要性，跳过
 			}
 
@@ -703,6 +574,18 @@ catch(...)\
 		//元素不同：bNeedWarp为true且enListElementTag为Compound
 		//元素相同：bNeedWarp为false且enListElementTag为列表元素类型
 
+		//检查
+		//仅判断去除空元素后是否超出上限
+		size_t szListLength = tList.size();
+		size_t szListNoEmptyEntryLength = szListLength - szListEmptyEntryLength;
+		if (szListNoEmptyEntryLength > (size_t)NBT_Type::ListLength_Max)//大于的情况下强制赋值会导致严重问题，只能返回错误
+		{
+			eRet = Error(ListTooLongError, tData, funcInfo, "{}:\nszListNoEmptyEntryLength[{}] > ListLength_Max[{}]", __FUNCTION__,
+				szListNoEmptyEntryLength, (size_t)NBT_Type::ListLength_Max);
+			STACK_TRACEBACK("szListLength Test");
+			return eRet;
+		}
+
 		//写出标签
 		eRet = WriteBigEndian(tData, (NBT_TAG_RAW_TYPE)enListElementTag, funcInfo);
 		if (eRet != AllOk)
@@ -712,7 +595,8 @@ catch(...)\
 		}
 
 		//写出长度，不包含空元素，所以减去iListEmptyEntryLength
-		eRet = WriteBigEndian(tData, iListLength - iListEmptyEntryLength, funcInfo);
+		NBT_Type::ListLength iListLength = (NBT_Type::ListLength)szListNoEmptyEntryLength;
+		eRet = WriteBigEndian(tData, iListLength, funcInfo);
 		if (eRet != AllOk)
 		{
 			STACK_TRACEBACK("iListLength Write");
@@ -720,11 +604,11 @@ catch(...)\
 		}
 
 		//写出列表（递归）
-		for (NBT_Type::ListLength i = 0; i < iListLength; ++i)//注意遍历仍然需要遍历整个列表，而不是iListLength - iListEmptyEntryLength
+		for (size_t i = 0; i < szListLength; ++i)//注意遍历仍然需要遍历整个列表而不是仅szListNoEmptyEntryLength，因为空元素可以在任何位置
 		{
 			//获取元素与类型
 			const NBT_Node &tmpNode = tList[i];
-			auto curTag = tmpNode.GetTag();
+			NBT_TAG curTag = tmpNode.GetTag();
 
 			if (curTag == NBT_TAG::End)//空元素跳过
 			{
@@ -740,7 +624,7 @@ catch(...)\
 
 				if (eRet != AllOk)
 				{
-					STACK_TRACEBACK("PutSwitch Error, Size: [{}] Index: [{}]", iListLength, i);
+					STACK_TRACEBACK("PutSwitch Error, Size: [{}] Index: [{}]", szListLength, i);
 					return eRet;
 				}
 			}
@@ -880,6 +764,7 @@ catch(...)\
 
 		return eRet;
 	}
+///@endcond
 
 public:
 	//输出到tData中，部分功能和原理参照ReadNBT处的注释，szDataStartIndex在此处可以对一个tData通过不同的tCompound和szStartIdx = tData.size()
@@ -896,7 +781,7 @@ public:
 	/// @return 写入成功返回true，失败返回false
 	/// @note 错误与警告信息都输出到funcInfo，错误会导致函数结束剩下的写出任务，并进行栈回溯输出，最终返回false。警告则只会输出一次信息，然后继续执行，如果没有任何错误但是存在警告，函数仍将返回true。
 	template<bool bSortCompound = true, typename OutputStream, typename InfoFunc = NBT_Print>
-	static bool WriteNBT(OutputStream OptStream, const NBT_Type::Compound &tCompound, size_t szStackDepth = 512, InfoFunc funcInfo = NBT_Print{}) noexcept
+	static bool WriteNBT(OutputStream &OptStream, const NBT_Type::Compound &tCompound, size_t szStackDepth = 512, InfoFunc funcInfo = NBT_Print{}) noexcept
 	{
 		return PutCompoundType<true, bSortCompound>(OptStream, tCompound, szStackDepth, funcInfo) == AllOk;
 	}
@@ -917,7 +802,7 @@ public:
 	template<bool bSortCompound = true, typename DataType = std::vector<uint8_t>, typename InfoFunc = NBT_Print>
 	static bool WriteNBT(DataType &tDataOutput, size_t szStartIdx, const NBT_Type::Compound &tCompound, size_t szStackDepth = 512, InfoFunc funcInfo = NBT_Print{}) noexcept
 	{
-		DefaultOutputStream<DataType> OptStream(tDataOutput, szStartIdx);
+		NBT_IO::DefaultOutputStream<DataType> OptStream(tDataOutput, szStartIdx);
 		return PutCompoundType<true, bSortCompound>(OptStream, tCompound, szStackDepth, funcInfo) == AllOk;
 	}
 
