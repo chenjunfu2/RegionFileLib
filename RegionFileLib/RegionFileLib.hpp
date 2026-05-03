@@ -3,6 +3,9 @@
 #include <nbt_cpp\NBT_All.hpp>
 
 #include <lz4.h>
+#include <charconv>
+#include <string>
+#include <filesystem>
 
 
 /*
@@ -107,7 +110,7 @@
 struct ChunkPos
 {
 public:
-	int64_t i64X = 0, i64Y = 0;
+	int64_t i64X = 0, i64Z = 0;
 
 public:
 
@@ -117,7 +120,7 @@ public:
 struct RegionPos
 {
 public:
-	int64_t i64X = 0, i64Y = 0;
+	int64_t i64X = 0, i64Z = 0;
 
 public:
 
@@ -149,6 +152,7 @@ public:
 	RegionPos posRegion{};
 	Chunk chunkData[REGION_CHUNK_COL][REGION_CHUNK_ROW]{};
 
+public:
 
 
 };
@@ -156,7 +160,8 @@ public:
 struct ChunkRaw
 {
 public:
-	constexpr static inline const char *const pChunkFileExtern = ".mcc";
+	constexpr static inline const std::string_view strChunkFileExtern = ".mcc";
+	constexpr static inline const std::string_view strChunkFileStart = "c.";
 
 	enum class CompressType : uint8_t
 	{
@@ -176,12 +181,7 @@ public:
 	std::vector<uint8_t> streamChunkData{};
 
 public:
-	static bool ReadChunkFile(const std::string &pFile, std::vector<uint8_t> &fStream)
-	{
-
-	}
-
-	bool ReadChunkStream(const std::vector<uint8_t> &fStream)
+	static bool ReadChunkFromFile(const std::string &pFile)
 	{
 
 	}
@@ -203,20 +203,58 @@ public:
 struct RegionRaw : public ReginInfo
 {
 public:
-	constexpr static inline const char *const pRegionFileExtern = ".mca";
+	constexpr static inline const std::string_view strRegionFileExtern = ".mca";
+	constexpr static inline const std::string_view strRegionFileStart = "r.";
 
 public:
 	RegionPos posRegion{};
 	ChunkRaw rawChunk[REGION_CHUNK_COL][REGION_CHUNK_ROW]{};
 
 public:
-	static bool ReadRegionFile(const std::string &pFile, std::vector<uint8_t> &fStream)
+	bool ReadRegionFromFile(const std::filesystem::path &pathFile)
 	{
-		return NBT_IO::ReadFile(pFile, fStream);
-	}
+		//读取mca文件并确认是否有mcc文件，有则自动打开并读取，否则标注
 
-	bool ReadRegionStream(const std::vector<uint8_t> &fStream)
-	{
+		//确认文件后缀
+		if (pathFile.extension().string() != strRegionFileExtern)
+		{
+			return false;
+		}
+
+		//确认文件前缀
+		std::string strNoExtFileName = pathFile.stem().string();
+		if (!strNoExtFileName.starts_with(strRegionFileStart))
+		{
+			return false;
+		}
+
+		//解析区域坐标
+		strNoExtFileName.erase(0, strRegionFileStart.size());//从头部删掉前缀
+
+		//查找中部的分隔符
+		size_t szDotPos = strNoExtFileName.find('.');
+		if (szDotPos == strNoExtFileName.npos)
+		{
+			return false;
+		}
+
+		
+		//解析坐标
+		if (std::from_chars(&strNoExtFileName[0], &strNoExtFileName[szDotPos], posRegion.i64X).ec != std::errc{})
+		{
+			return false;
+		}
+		if (std::from_chars(&strNoExtFileName[szDotPos], &strNoExtFileName[strNoExtFileName.size()], posRegion.i64Z).ec != std::errc{})
+		{
+			return false;
+		}
+
+		//流式读取文件
+		std::vector<uint8_t> fStream;
+		if (!NBT_IO::ReadFile(pathFile, fStream))
+		{
+			return false;
+		}
 
 
 
@@ -224,18 +262,12 @@ public:
 
 
 
+
+		return ;
 	}
 
 	std::string GetRegionFileName(void)
 	{
-
-	}
-
-	std::vector<std::filesystem::path> GetExternChunkFileNameList(void)
-	{
-
-
-
 
 	}
 
