@@ -51,15 +51,15 @@
 		+-----------------+ +0 (扇区起始(offset * 4096))
 		|   长度 (4字节)   |
 		+-----------------+ +4
-		|   版本 (1字节)   |
+		|   标志 (1字节)   |
 		+-----------------+ +5 (头部结束，数据起始)
 		| 压缩后的NBT数据  |
 		+-----------------+ +n (数据结束位置)
 		| 空闲空间(填充零) |
 		+-----------------+ +x (4KB边界)(下一个扇区起始)((offset * 4096)+(size * 4096))
-		长度：不包含头部4字节，但是包含版本1字节，有符号数，但是因为不可大于1mb所以符号无所谓
+		长度：不包含头部4字节，但是包含标志1字节，有符号数，但是因为不可大于1mb所以符号无所谓
 
-		版本：
+		标志：
 		+-----------------+
 		| bit 7 | bit 6~0 |
 		+-----------------+
@@ -71,11 +71,11 @@
 		+-----------------+ +0 (扇区起始 (offset * 4096))
 		|   长度 (4字节)   |
 		+-----------------+ +4
-		|   版本 (1字节)   |
+		|   标志 (1字节)   |
 		+-----------------+ +5 (头部结束)
 		| 空闲空间(填充零) |
 		+-----------------+ +4095 (下一个扇区起始)((offset * 4096)+(1 * 4096))
-		长度固定为：1 （仅包含1字节版本，剩余区块长度由mcc文件长度决定）
+		长度固定为：1 （仅包含1字节标志，剩余区块长度由mcc文件长度决定）
 		额外区块信息在MCA文件中至少占用1扇区（仅用于存储文件头）
 		额外区块数据存储在MCC文件中
 
@@ -134,33 +134,31 @@ public:
 
 struct ReginInfo
 {
-	constexpr static inline size_t REGION_CHUNK_COL = 32;//行(y)
-	constexpr static inline size_t REGION_CHUNK_ROW = 32;//列(x)
-	constexpr static inline size_t REGION_CHUNK_COUNT = REGION_CHUNK_COL * REGION_CHUNK_ROW;//总数
-};
-
-
-struct Chunk
-{
-public:
-	ChunkPos posChunk{};
-	uint32_t u32Timestamp{};
-	NBT_Type::Compound cpdChunkData{};
-
-public:
 
 };
 
-struct Region : public ReginInfo
-{
-public:
-	RegionPos posRegion{};
-	Chunk chunkData[REGION_CHUNK_COL][REGION_CHUNK_ROW]{};
 
-public:
-
-
-};
+//struct Chunk
+//{
+//public:
+//	ChunkPos posChunk{};
+//	uint32_t u32Timestamp{};
+//	NBT_Type::Compound cpdChunkData{};
+//
+//public:
+//
+//};
+//
+//struct Region : public ReginInfo
+//{
+//public:
+//	RegionPos posRegion{};
+//	Chunk chunkData[REGION_CHUNK_COL][REGION_CHUNK_ROW]{};
+//
+//public:
+//
+//
+//};
 
 struct ChunkRaw
 {
@@ -196,45 +194,61 @@ public:
 
 	}
 
-	Chunk ToChunk(void)
-	{
-
-	}
+	//Chunk ToChunk(void)
+	//{
+	//
+	//}
 
 };
 
 
 //32*32区块=1区域
-struct RegionRaw : public ReginInfo
+struct RegionRaw
 {
 public:
-	constexpr static inline const std::string_view strRegionFileExtern = ".mca";
-	constexpr static inline const std::string_view strRegionFileStart = "r.";
-	constexpr static inline const size_t szPageSize = 4096;
+	constexpr static inline std::string_view strRegionFileExtern = ".mca";
+	constexpr static inline std::string_view strRegionFileStart = "r.";
+	constexpr static inline size_t szPageSize = 4096;
+
+	constexpr static inline size_t szChunkCol = 32;//行(y)
+	constexpr static inline size_t szChunkRow = 32;//列(x)
+	constexpr static inline size_t szChunkCount = szChunkCol * szChunkRow;//总数
 
 public:
 	RegionPos posRegion{};
 
 	struct FileHead//8kb
 	{
-		uint32_t u32ArrSectorInfo[1024];
-		uint32_t u32ArrChunkTimeStamp[1024];
+		uint32_t u32ArrSectorInfo[szChunkCount];
+		uint32_t u32ArrChunkTimeStamp[szChunkCount];
 	};
+	static_assert(sizeof(FileHead) == szPageSize * 2);
 
 	struct ChunkHead
 	{
-		uint32_t u32ChunkSize;
-		uint8_t u8
-
-
+		uint32_t u32ChunkSize;//区块大小（字节数），包含标志位
+		uint8_t u8Flags;//标志位
 	};
 	
+	struct ChunkData
+	{
+		std::vector<uint8_t> vChunkStream;
+	};
 
-	static_assert(sizeof(FileHead) == szPageSize * 2);
+	struct Chunk
+	{
+		ChunkHead head;
+		ChunkData data;
+	};
 
-
-	//ChunkRaw rawChunk[REGION_CHUNK_COL][REGION_CHUNK_ROW]{};
-
+public:
+	FileHead stFileHead;
+	union
+	{
+		Chunk stChunkFlat[szChunkCount];
+		Chunk stChunk2D[szChunkCol][szChunkRow];
+		static_assert(sizeof(stChunkFlat) == sizeof(stChunk2D));
+	};
 public:
 	static bool ReadRegionFromFile(const std::filesystem::path &pathFile, RegionPos &posRegion, std::vector<uint8_t> &vDataStream)
 	{
@@ -354,10 +368,10 @@ public:
 
 	}
 
-	Region ToRegion(void)
-	{
-
-	}
+	//Region ToRegion(void)
+	//{
+	//
+	//}
 
 };
 
