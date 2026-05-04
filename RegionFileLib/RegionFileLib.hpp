@@ -6,9 +6,13 @@
 #include <charconv>
 #include <string>
 #include <filesystem>
+//#include <span>
 
 
 /*
+		备注：
+		所有数据均为大端序
+
 		总体：
 		+----------------+ 0x0000 (0)
 		|   文件头 (8KB)  |
@@ -53,7 +57,7 @@
 		+-----------------+ +n (数据结束位置)
 		| 空闲空间(填充零) |
 		+-----------------+ +x (4KB边界)(下一个扇区起始)((offset * 4096)+(size * 4096))
-		长度：不包含头部5字节，有符号数，但是因为不可大于1mb所以符号无所谓
+		长度：不包含头部4字节，但是包含版本1字节，有符号数，但是因为不可大于1mb所以符号无所谓
 
 		版本：
 		+-----------------+
@@ -71,6 +75,7 @@
 		+-----------------+ +5 (头部结束)
 		| 空闲空间(填充零) |
 		+-----------------+ +4095 (下一个扇区起始)((offset * 4096)+(1 * 4096))
+		长度固定为：1 （仅包含1字节版本，剩余区块长度由mcc文件长度决定）
 		额外区块信息在MCA文件中至少占用1扇区（仅用于存储文件头）
 		额外区块数据存储在MCC文件中
 
@@ -205,10 +210,30 @@ struct RegionRaw : public ReginInfo
 public:
 	constexpr static inline const std::string_view strRegionFileExtern = ".mca";
 	constexpr static inline const std::string_view strRegionFileStart = "r.";
+	constexpr static inline const size_t szPageSize = 4096;
 
 public:
 	RegionPos posRegion{};
-	ChunkRaw rawChunk[REGION_CHUNK_COL][REGION_CHUNK_ROW]{};
+
+	struct FileHead//8kb
+	{
+		uint32_t u32ArrSectorInfo[1024];
+		uint32_t u32ArrChunkTimeStamp[1024];
+	};
+
+	struct ChunkHead
+	{
+		uint32_t u32ChunkSize;
+		uint8_t u8
+
+
+	};
+	
+
+	static_assert(sizeof(FileHead) == szPageSize * 2);
+
+
+	//ChunkRaw rawChunk[REGION_CHUNK_COL][REGION_CHUNK_ROW]{};
 
 public:
 	static bool ReadRegionFromFile(const std::filesystem::path &pathFile, RegionPos &posRegion, std::vector<uint8_t> &vDataStream)
@@ -269,7 +294,7 @@ public:
 
 
 
-	struct ChunkTraverseVisitor
+	struct ChunkVisitor
 	{
 	public:
 		enum class Control :uint8_t
@@ -284,26 +309,35 @@ public:
 		{
 			//u32ChunkSectorOffset 与 u8ChunkSectorSize 都为0则区块未生成
 
-
+			return Control::Continue;
 		}
 
 		Control VisitChunkMeta(uint32_t u32ChunkSize, uint8_t u8ChunkVersion)
 		{
 			//u32ChunkSize超过1mb则存储在外部
 
-
+			return Control::Continue;
 		}
 
 		Control VisitChunkStream(std::vector<uint8_t> &&vChunkStream)
 		{
-
+			return Control::Continue;
 		}
-
 	};
+
+
 
 
 	static bool TraverseChunkRawFromStream(const RegionPos &posRegion, const std::vector<uint8_t> &vDataStream)
 	{
+		if (vDataStream.size() < sizeof(FileHead))
+		{
+			return false;
+		}
+
+		FileHead *pFileHead = (FileHead *)&vDataStream[0];
+		size_t szSectorPageStart = sizeof(FileHead) / szPageSize;
+
 
 
 
