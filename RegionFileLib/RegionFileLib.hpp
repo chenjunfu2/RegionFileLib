@@ -29,13 +29,13 @@
 		| bit 31~8 | bit 7~0 |
 		+--------------------+
 		bit 31~8 : 起始扇区偏移 (offset)，从文件头开始计算，偏移为4kb大小的页面数
-		bit 7~0  : 占用扇区大小 (size)，无符号数，最大为255扇区
+		bit 7~0  : 占用扇区大小 (size)，无符号数，最大为255扇区（如果区块溢出为mcc文件，则至少占用1扇区，且存在扇区起始偏移位置）
 
 		扇区信息（区块未生成）：
 		+--------------------+
 		|    bit 31~0 = 0    |
 		+--------------------+
-		bit 31~0 : 全为0，区块未生成，跳过存储，但是影响区块Pos计算
+		bit 31~0 : 全为0，区块未生成，跳过存储，但是影响区块Pos计算（完全不占用任何额外扇区，仅元数据中存在0）
 
 		时间戳（秒）：
 		+----------------+
@@ -53,7 +53,7 @@
 		+-----------------+ +n (数据结束位置)
 		| 空闲空间(填充零) |
 		+-----------------+ +x (4KB边界)(下一个扇区起始)((offset * 4096)+(size * 4096))
-		长度：不包含头部5字节
+		长度：不包含头部5字节，有符号数，但是因为不可大于1mb所以符号无所谓
 
 		版本：
 		+-----------------+
@@ -211,7 +211,7 @@ public:
 	ChunkRaw rawChunk[REGION_CHUNK_COL][REGION_CHUNK_ROW]{};
 
 public:
-	bool ReadRegionFromFile(const std::filesystem::path &pathFile)
+	static bool ReadRegionFromFile(const std::filesystem::path &pathFile, RegionPos &posRegion, std::vector<uint8_t> &vDataStream)
 	{
 		//读取mca文件并确认是否有mcc文件，有则自动打开并读取，否则标注
 
@@ -250,21 +250,70 @@ public:
 		}
 
 		//流式读取文件
-		std::vector<uint8_t> fStream;
-		if (!NBT_IO::ReadFile(pathFile, fStream))
+		if (!NBT_IO::ReadFile(pathFile, vDataStream))
 		{
 			return false;
 		}
 
-
-
-
-
-
-
-
-		return ;
+		return true;
 	}
+
+	static bool GetChunkRawFromStream(const RegionPos &posRegion, const std::vector<uint8_t> &vDataStream, const ChunkPos &posChunk, ChunkRaw &rawChunk)
+	{
+
+
+
+
+
+	}
+
+
+
+	struct ChunkTraverseVisitor
+	{
+	public:
+		enum class Control :uint8_t
+		{
+			Continue,
+			Skip,
+			Stop,
+		};
+
+	public:
+		Control VisitSectorChunkMeta(uint32_t u32ChunkSectorOffset, uint8_t u8ChunkSectorSize, uint32_t u32ChunkTimeStamp)
+		{
+			//u32ChunkSectorOffset 与 u8ChunkSectorSize 都为0则区块未生成
+
+
+		}
+
+		Control VisitChunkMeta(uint32_t u32ChunkSize, uint8_t u8ChunkVersion)
+		{
+			//u32ChunkSize超过1mb则存储在外部
+
+
+		}
+
+		Control VisitChunkStream(std::vector<uint8_t> &&vChunkStream)
+		{
+
+		}
+
+	};
+
+
+	static bool TraverseChunkRawFromStream(const RegionPos &posRegion, const std::vector<uint8_t> &vDataStream)
+	{
+
+
+
+
+
+
+
+	}
+
+
 
 	std::string GetRegionFileName(void)
 	{
