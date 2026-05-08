@@ -6,6 +6,7 @@
 #include <charconv>
 #include <string>
 #include <filesystem>
+#include <fstream>
 //#include <span>
 
 
@@ -122,22 +123,6 @@ public:
 };
 
 
-struct RegionPos
-{
-public:
-	int64_t i64X = 0, i64Z = 0;
-
-public:
-
-};
-
-
-struct ReginInfo
-{
-
-};
-
-
 //struct Chunk
 //{
 //public:
@@ -152,7 +137,7 @@ struct ReginInfo
 //struct Region : public ReginInfo
 //{
 //public:
-//	RegionPos posRegion{};
+//	RegionPos stRegionPos{};
 //	Chunk chunkData[REGION_CHUNK_COL][REGION_CHUNK_ROW]{};
 //
 //public:
@@ -194,11 +179,6 @@ public:
 
 	}
 
-	//Chunk ToChunk(void)
-	//{
-	//
-	//}
-
 };
 
 
@@ -215,42 +195,48 @@ public:
 	constexpr static inline size_t szChunkCount = szChunkCol * szChunkRow;//总数
 
 public:
-	RegionPos posRegion{};
+	struct RegionPos
+	{
+		int64_t i64X{};
+		int64_t i64Z{};
+	};
 
 	struct FileHead//8kb
 	{
-		uint32_t u32ArrSectorInfo[szChunkCount];
-		uint32_t u32ArrChunkTimeStamp[szChunkCount];
+		uint32_t u32ArrSectorInfo[szChunkCount]{};
+		uint32_t u32ArrChunkTimeStamp[szChunkCount]{};
 	};
 	static_assert(sizeof(FileHead) == szPageSize * 2);
 
 	struct ChunkHead
 	{
-		uint32_t u32ChunkSize;//区块大小（字节数），包含标志位
-		uint8_t u8Flags;//标志位
+		uint32_t u32ChunkSize{};//区块大小（字节数），不包含标志位
+		uint8_t u8ChunkFlags{};//标志位
 	};
 	
 	struct ChunkData
 	{
-		std::vector<uint8_t> vChunkStream;
+		std::vector<uint8_t> vChunkStream{};
 	};
 
 	struct Chunk
 	{
-		ChunkHead head;
-		ChunkData data;
+		ChunkHead head{};
+		ChunkData data{};
 	};
 
 public:
+	RegionPos stRegionPos;
 	FileHead stFileHead;
 	union
 	{
 		Chunk stChunkFlat[szChunkCount];
 		Chunk stChunk2D[szChunkCol][szChunkRow];
-		static_assert(sizeof(stChunkFlat) == sizeof(stChunk2D));
 	};
+	static_assert(sizeof(stChunkFlat) == sizeof(stChunk2D));
+
 public:
-	static bool ReadRegionFromFile(const std::filesystem::path &pathFile, RegionPos &posRegion, std::vector<uint8_t> &vDataStream)
+	bool ReadRegionFromFile(const std::filesystem::path &pathFile)
 	{
 		//读取mca文件并确认是否有mcc文件，有则自动打开并读取，否则标注
 
@@ -279,100 +265,123 @@ public:
 
 		
 		//解析坐标
-		if (std::from_chars(&strNoExtFileName[0], &strNoExtFileName[szDotPos], posRegion.i64X).ec != std::errc{})
+		if (std::from_chars(&strNoExtFileName[0], &strNoExtFileName[szDotPos], stRegionPos.i64X).ec != std::errc{})
 		{
 			return false;
 		}
-		if (std::from_chars(&strNoExtFileName[szDotPos], &strNoExtFileName[strNoExtFileName.size()], posRegion.i64Z).ec != std::errc{})
+		if (std::from_chars(&strNoExtFileName[szDotPos], &strNoExtFileName[strNoExtFileName.size()], stRegionPos.i64Z).ec != std::errc{})
 		{
 			return false;
 		}
 
-		//流式读取文件
-		if (!NBT_IO::ReadFile(pathFile, vDataStream))
+		//读取文件头（大小端转换）
+		std::fstream fRead;
+		fRead.open(pathFile, std::ios_base::in | std::ios_base::binary);
+		if (!fRead)
 		{
 			return false;
+		}
+
+		//lambda
+		auto SimpleRead =
+		[&fRead](void *pData, size_t szReadSize) -> bool
+		{
+			if (fRead.read((char *)pData, szReadSize).gcount() != szReadSize)
+			{
+				return false;
+			}
+
+			return true;
+		};
+
+		auto SimpleJump = 
+		[&fRead](size_t szJumpPos) -> void
+		{
+			fRead.seekg(szJumpPos, std::ios_base::beg);
+		};
+
+		//读取扇区信息
+		if (!SimpleRead(stFileHead.u32ArrSectorInfo, sizeof(stFileHead.u32ArrSectorInfo)))
+		{
+			return false;
+		}
+		if (!SimpleRead(stFileHead.u32ArrChunkTimeStamp, sizeof(stFileHead.u32ArrChunkTimeStamp)))
+		{
+			return false;
+		}
+		
+		//字节序转换
+		for (size_t i = 0; i < szChunkCount; ++i)
+		{
+			stFileHead.u32ArrSectorInfo[i] = NBT_Endian::BigToNativeAny(stFileHead.u32ArrSectorInfo[i]);
+			stFileHead.u32ArrChunkTimeStamp[i] = NBT_Endian::BigToNativeAny(stFileHead.u32ArrChunkTimeStamp[i]);
+		}
+		
+
+		//根据扇区信息，读取区块
+		for (size_t i = 0; i < szChunkCount; ++i)
+		{
+			//使用page size相乘获取实际大小和偏移
+			uint64_t u64SectorOffset = (uint64_t)((stFileHead.u32ArrSectorInfo[i] >> 8) & (uint32_t)0x00'FF'FF'FF) * (uint64_t)szPageSize;
+			uint32_t u32SectorSize = (uint32_t)(stFileHead.u32ArrSectorInfo[i] & (uint32_t)0x00'00'00'FF) * (uint32_t)szPageSize;
+
+			//跳转到指定起始位置
+			SimpleJump(u64SectorOffset);
+
+			//读取4字节长度
+			uint32_t u32ChunkSize{};
+			if (!SimpleRead(&u32ChunkSize, sizeof(u32ChunkSize)))
+			{
+				return false;
+			}
+			u32ChunkSize = NBT_Endian::BigToNativeAny(u32ChunkSize);
+
+			//合法性判断 
+			if (u32ChunkSize > u32SectorSize ||//区块大小大于扇区数据大小
+				u32ChunkSize == 0)//u32ChunkSize至少包含一个标志位1字节大小，不可为0
+			{
+				return false;
+			}
+
+			//读取区块数据
+			//首先读1字节标志位（因为4字节长度包含标志位长度，读取后需要减少）
+			uint8_t u8ChunkFlags{};
+			if (!SimpleRead(&u8ChunkFlags, sizeof(u8ChunkFlags)))
+			{
+				return false;
+			}
+			//注意1字节没有字节序问题，无需转换
+
+			//剩下的就是区块数据长度（不包含标志位）
+			--u32ChunkSize;
+
+			//保存一下
+			stChunkFlat[i].head.u32ChunkSize = u32ChunkSize;
+			stChunkFlat[i].head.u8ChunkFlags = u8ChunkFlags;
+
+			//判断标志位，确定区块是否存储在当前mca文件中
+			if ((u8ChunkFlags & 0b1000'0000) == 0b1000'0000)//高位为1，存储在外部
+			{
+				//TODO: Read MCC
+			}
+			else
+			{
+				//直接读取，暂时不考虑压缩相关问题
+				stChunkFlat[i].data.vChunkStream.reserve(u32ChunkSize);
+				if (!SimpleRead(stChunkFlat[i].data.vChunkStream.data(), sizeof(uint8_t) * u32ChunkSize))
+				{
+					return false;
+				}
+			}
 		}
 
 		return true;
 	}
 
-	static bool GetChunkRawFromStream(const RegionPos &posRegion, const std::vector<uint8_t> &vDataStream, const ChunkPos &posChunk, ChunkRaw &rawChunk)
-	{
-
-
-
-
-
-	}
-
-
-
-	struct ChunkVisitor
-	{
-	public:
-		enum class Control :uint8_t
-		{
-			Continue,
-			Skip,
-			Stop,
-		};
-
-	public:
-		Control VisitSectorChunkMeta(uint32_t u32ChunkSectorOffset, uint8_t u8ChunkSectorSize, uint32_t u32ChunkTimeStamp)
-		{
-			//u32ChunkSectorOffset 与 u8ChunkSectorSize 都为0则区块未生成
-
-			return Control::Continue;
-		}
-
-		Control VisitChunkMeta(uint32_t u32ChunkSize, uint8_t u8ChunkVersion)
-		{
-			//u32ChunkSize超过1mb则存储在外部
-
-			return Control::Continue;
-		}
-
-		Control VisitChunkStream(std::vector<uint8_t> &&vChunkStream)
-		{
-			return Control::Continue;
-		}
-	};
-
-
-
-
-	static bool TraverseChunkRawFromStream(const RegionPos &posRegion, const std::vector<uint8_t> &vDataStream)
-	{
-		if (vDataStream.size() < sizeof(FileHead))
-		{
-			return false;
-		}
-
-		FileHead *pFileHead = (FileHead *)&vDataStream[0];
-		size_t szSectorPageStart = sizeof(FileHead) / szPageSize;
-
-
-
-
-
-
-
-
-	}
-
-
-
 	std::string GetRegionFileName(void)
 	{
-
+		return std::format("{}{}.{}{}", strRegionFileStart, stRegionPos.i64X, stRegionPos.i64Z, strRegionFileExtern);
 	}
-
-	//Region ToRegion(void)
-	//{
-	//
-	//}
-
 };
 
 
