@@ -1,0 +1,83 @@
+RegionFileLib 设计重构 TODO
+=============================
+
+一、核心问题
+-----------
+当前 RegionRaw::ReadRegionFromFile 一次性读取所有区块数据（含压缩字节），
+即使用户只需查时间戳也必须付出全部 I/O 和内存代价。
+union stChunkFlat[1024] 预分配 1024 个 Chunk 槽位，空区块也浪费内存。
+
+二、设计原则
+-----------
+1. 8KB 文件头永远便宜——打开文件仅解析文件头
+2. 区块数据按索引按需读取——用户决定什么时候读、读哪一个
+3. 每个类型职责单一——不混入 I/O、解压、NBT 解析
+4. MCA 文件自我完备——不对外部 MCC 文件做隐含假设
+
+三、分层架构
+-----------
+层 1: RegionFile 打开（8KB I/O）
+  - 得到所有区块的扇区偏移、大小、时间戳
+  - 纯内存查询: HasChunk(), GetTimestamp(), GetSectorOffset(), GetSectorSize()
+
+层 2: ReadChunkRaw(localX, localZ)（扇区/文件 I/O）
+  - 返回 optional<ChunkRaw>（压缩字节 + 压缩类型 + 是否外部存储标记）
+  - 外部存储（MCC）: 只返回 external=true + 空 data，不自动读 MCC
+
+层 3: Decompress(ChunkRaw)（CPU 解压）
+  - 自由函数，输入 ChunkRaw，输出解压后的字节
+
+层 4: ParseNBT(bytes)（CPU 解析）
+  - 自由函数 / NBT_Reader，输入解压字节，输出 NBT_Type::Compound
+
+四、核心类职责
+-------------
+RegionFile:
+  - 持有: Header（8KB）+ 文件路径
+  - 不持有: 区块数据缓存、MCC 文件句柄
+  - 提供: Header 查询（零 I/O）、按索引读区块（单次 I/O）、
+         区块坐标计算（纯数学）、MCC 预期路径计算（纯拼接，不检查存在性）
+  - 不承诺: MCC 一定存在
+
+ChunkRaw:
+  - 持有: pos, timestamp, compression type, external flag, compressed bytes
+  - 静态方法: ReadChunkFromFile(mccPath) —— 独立读取 MCC 文件
+  - 与 RegionFile 零耦合
+
+Chunk（解析后的最终形态）:
+  - 持有: pos, timestamp, NBT_Type::Compound nbt
+
+转换函数（自由函数，不绑死在类上）:
+  - DecompressChunk(ChunkRaw) -> optional<vector<uint8_t>>
+  - ParseChunk(ChunkRaw) -> optional<Chunk>  （解压 + NBT 解析合一）
+  - ReadMCCFile(path) -> optional<vector<uint8_t>>  （纯 MCC 文件读取）
+
+五、MCC 外挂文件处理策略
+-----------------------
+原则: MCA 自我完备，MCC 失败可能性暴露给用户，但提供完整辅助。
+
+RegionFile::ReadChunkRaw 的行为:
+  - bit7 = 0（内部存储）→ 从 MCA 扇区读取压缩数据返回
+  - bit7 = 1（外部存储）→ 返回 ChunkRaw{external=true, data=空}
+
+RegionFile 提供的辅助（纯计算，不碰磁盘，不失败）:
+  - GetChunkPos(localX, localZ) -> ChunkPos   （区域坐标+本地索引=绝对区块坐标）
+  - GetMCCPath(localX, localZ) -> path          （拼接 c.<chunkX>.<chunkZ>.mcc）
+
+用户流程:
+  1. raw = rf.ReadChunkRaw(x, z);
+  2. if (raw->external) {
+       path = rf.GetMCCPath(x, z);        // 只算路径
+       data = ReadMCCFile(path);           // 独立读取，失败由用户处理
+       raw->data = move(data);
+     }
+
+六、与现有 RegionRaw 的关键区别
+-------------------------------
+                   RegionRaw（现状）            RegionFile（建议）
+打开成本           8KB头 + 所有存在的区块数据     仅 8KB 头
+内存占用           1024个Chunk槽位（含空vector） Header结构体（约8KB）
+查时间戳           已加载，但付出了区块读取成本   零额外 I/O
+读一个区块         已全部读取                     seek + 读一个
+不解压复制区块     不支持                         支持（拿 ChunkRaw 直接写）
+MCC 失败处理       未处理                         由用户完全掌控
