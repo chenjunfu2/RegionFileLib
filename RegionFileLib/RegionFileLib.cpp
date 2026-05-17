@@ -1,13 +1,12 @@
-﻿#include <stdint.h>
+﻿#include "RegionFileLib.hpp"
+
+#include <stdint.h>
 #include <locale.h>
 #include <stdlib.h>
 
-
-#include <util\Windows_ANSI.hpp>
 #include <util\MyAssert.hpp>
 #include <util\CodeTimer.hpp>
-
-#include "RegionFileLib.hpp"
+#include <util\Windows_ANSI.hpp>
 
 //int wmain0(int argc, wchar_t *argv[])
 //{
